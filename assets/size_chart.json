@@ -1,0 +1,41 @@
+{
+  "MINI": [
+    { "size": "75", "widthMm": 75, "heelToeMm": 70 },
+    { "size": "85", "widthMm": 85, "heelToeMm": 80 },
+    { "size": "95", "widthMm": 95, "heelToeMm": 90 },
+    { "size": "100", "widthMm": 100, "heelToeMm": 105 }
+  ],
+  "FRONTS": [
+    { "size": "5x0", "widthMm": 105, "heelToeMm": 108 },
+    { "size": "4x0", "widthMm": 113, "heelToeMm": 113 },
+    { "size": "3x0", "widthMm": 120, "heelToeMm": 120 },
+    { "size": "00", "widthMm": 125, "heelToeMm": 125 },
+    { "size": "0", "widthMm": 135, "heelToeMm": 130 },
+    { "size": "1", "widthMm": 140, "heelToeMm": 135 },
+    { "size": "2", "widthMm": 145, "heelToeMm": 140 },
+    { "size": "3", "widthMm": 150, "heelToeMm": 145 },
+    { "size": "4", "widthMm": 155, "heelToeMm": 155 },
+    { "size": "5", "widthMm": 165, "heelToeMm": 174 }
+  ],
+  "DRAFT": [
+    { "size": "6", "widthMm": 172, "heelToeMm": 181 },
+    { "size": "7", "widthMm": 178, "heelToeMm": 180 },
+    { "size": "8", "widthMm": 202, "heelToeMm": 204 }
+  ],
+  "SPORTSHU": [
+    { "size": "5", "widthMm": 130, "heelToeMm": 120 },
+    { "size": "6", "widthMm": 135, "heelToeMm": 125 },
+    { "size": "7", "widthMm": 138, "heelToeMm": 130 }
+  ],
+  "HINDS": [
+    { "size": "5x0", "widthMm": 100, "heelToeMm": 108 },
+    { "size": "4x0", "widthMm": 108, "heelToeMm": 116 },
+    { "size": "3x0", "widthMm": 112, "heelToeMm": 122 },
+    { "size": "00", "widthMm": 120, "heelToeMm": 125 },
+    { "size": "0", "widthMm": 125, "heelToeMm": 130 },
+    { "size": "1", "widthMm": 130, "heelToeMm": 138 },
+    { "size": "2", "widthMm": 138, "heelToeMm": 143 },
+    { "size": "3", "widthMm": 143, "heelToeMm": 150 },
+    { "size": "4", "widthMm": 151, "heelToeMm": 166 }
+  ]
+}
