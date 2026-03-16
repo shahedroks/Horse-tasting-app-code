@@ -7,7 +7,6 @@ import '../../models/object_bounds.dart';
 import '../../models/measurement_quality.dart';
 import '../../models/measurement_result.dart';
 import '../../providers/measurement_flow_provider.dart';
-import '../../services/calibration_service.dart';
 import '../../widgets/measurement_overlay_painter.dart';
 
 /// Review: show image, border overlay, width/height (px and mm if calibration), manual adjust, recalculate, confirm.
@@ -100,6 +99,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
           _ReviewPanel(
             result: result,
             bounds: bounds,
+            imageWidth: w,
+            imageHeight: h,
             onManualAdjust: () => Navigator.of(context).pushNamed('/detection').then((_) => setState(() {})),
             onRecalculate: () => Navigator.of(context).pushReplacementNamed('/processing'),
             onConfirm: () => _confirm(flow),
@@ -169,6 +170,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
 class _ReviewPanel extends StatelessWidget {
   final DetectionResult? result;
   final ObjectBounds bounds;
+  final int imageWidth;
+  final int imageHeight;
   final VoidCallback onManualAdjust;
   final VoidCallback onRecalculate;
   final VoidCallback onConfirm;
@@ -176,6 +179,8 @@ class _ReviewPanel extends StatelessWidget {
   const _ReviewPanel({
     required this.result,
     required this.bounds,
+    required this.imageWidth,
+    required this.imageHeight,
     required this.onManualAdjust,
     required this.onRecalculate,
     required this.onConfirm,
@@ -188,6 +193,8 @@ class _ReviewPanel extends StatelessWidget {
     final widthMm = result?.widthMm;
     final heightMm = result?.heightMm;
     final hasCalibration = result?.hasCalibration ?? false;
+    final widthCm = widthMm != null ? widthMm / 10.0 : null;
+    final heightCm = heightMm != null ? heightMm / 10.0 : null;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -196,11 +203,14 @@ class _ReviewPanel extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Width: ${widthPx.toStringAsFixed(0)} px'),
-          Text('Height: ${heightPx.toStringAsFixed(0)} px'),
+          Text('Image Size: ${imageWidth} × ${imageHeight} px'),
+          const SizedBox(height: 4),
+          Text('Object Width: ${widthPx.toStringAsFixed(0)} px'),
+          Text('Object Height: ${heightPx.toStringAsFixed(0)} px'),
           if (hasCalibration && widthMm != null && heightMm != null) ...[
-            Text('Width: ${widthMm.toStringAsFixed(1)} mm'),
-            Text('Height: ${heightMm.toStringAsFixed(1)} mm'),
+            const SizedBox(height: 4),
+            Text('Converted Width: ${widthCm!.toStringAsFixed(2)} cm (${widthMm.toStringAsFixed(1)} mm)'),
+            Text('Converted Height: ${heightCm!.toStringAsFixed(2)} cm (${heightMm.toStringAsFixed(1)} mm)'),
           ] else ...[
             const SizedBox(height: 4),
             Text(

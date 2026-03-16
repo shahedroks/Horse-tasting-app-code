@@ -17,6 +17,8 @@ import 'features/size_chart/size_chart_screen.dart';
 import 'features/calibration/calibration_screen.dart';
 import 'features/processing/processing_screen.dart';
 import 'features/review/review_screen.dart';
+import 'features/ar_measurement/ar_measure_screen.dart';
+import 'features/ar_measurement/ar_measure_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +37,9 @@ void main() async {
             measurementService: MeasurementService(calibrationService),
             sizeMatchingService: SizeMatchingService(),
           ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ArMeasureProvider(),
         ),
       ],
       child: const MyApp(),
@@ -65,6 +70,7 @@ class MyApp extends StatelessWidget {
         '/result': (context) => const ResultScreen(),
         '/size_chart': (context) => const SizeChartScreen(),
         '/calibration': (context) => const CalibrationScreen(),
+        '/ar_measure': (context) => const ArMeasureScreen(),
       },
     );
   }
