@@ -19,6 +19,7 @@ class ReviewScreen extends StatefulWidget {
 
 class _ReviewScreenState extends State<ReviewScreen> {
   double _scale = 1.0;
+  bool _ovalBorder = false;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +88,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           bounds: bounds,
                           scale: _scale,
                           showWidthHeightLines: true,
+                          drawAsOval: _ovalBorder,
                         ),
                         size: Size(displayW, displayH),
                       ),
@@ -101,6 +103,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             bounds: bounds,
             imageWidth: w,
             imageHeight: h,
+            ovalBorder: _ovalBorder,
+            onToggleOvalBorder: (v) => setState(() => _ovalBorder = v),
             onManualAdjust: () => Navigator.of(context).pushNamed('/detection').then((_) => setState(() {})),
             onRecalculate: () => Navigator.of(context).pushReplacementNamed('/processing'),
             onConfirm: () => _confirm(flow),
@@ -172,6 +176,8 @@ class _ReviewPanel extends StatelessWidget {
   final ObjectBounds bounds;
   final int imageWidth;
   final int imageHeight;
+  final bool ovalBorder;
+  final ValueChanged<bool> onToggleOvalBorder;
   final VoidCallback onManualAdjust;
   final VoidCallback onRecalculate;
   final VoidCallback onConfirm;
@@ -181,6 +187,8 @@ class _ReviewPanel extends StatelessWidget {
     required this.bounds,
     required this.imageWidth,
     required this.imageHeight,
+    required this.ovalBorder,
+    required this.onToggleOvalBorder,
     required this.onManualAdjust,
     required this.onRecalculate,
     required this.onConfirm,
@@ -203,6 +211,20 @@ class _ReviewPanel extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (result != null) ...[
+            Text('Detection: ${result!.detectionMethod.displayName}'),
+            const SizedBox(height: 4),
+          ],
+          Row(
+            children: [
+              const Text('Oval border'),
+              const Spacer(),
+              Switch(
+                value: ovalBorder,
+                onChanged: onToggleOvalBorder,
+              ),
+            ],
+          ),
           Text('Image Size: ${imageWidth} × ${imageHeight} px'),
           const SizedBox(height: 4),
           Text('Object Width: ${widthPx.toStringAsFixed(0)} px'),

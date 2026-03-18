@@ -43,25 +43,25 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       flow.setCapturedImageSize(decoded.width, decoded.height);
     }
 
-    final output = await flow.borderDetectionService.detect(cropped);
+    final detailed = await flow.measurementService.detectObjectDetailed(cropped);
     if (!mounted) return;
 
-    if (output != null) {
-      flow.objectBounds = output.bounds;
+    if (detailed != null) {
+      flow.objectBounds = detailed.bounds;
       final scalePxPerMm = flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
       final hasCalibration = scalePxPerMm != null && scalePxPerMm > 0;
-      final widthMm = hasCalibration ? output.bounds.widthPx / scalePxPerMm : null;
-      final heightMm = hasCalibration ? output.bounds.heightPx / scalePxPerMm : null;
+      final widthMm = hasCalibration ? detailed.bounds.widthPx / scalePxPerMm : null;
+      final heightMm = hasCalibration ? detailed.bounds.heightPx / scalePxPerMm : null;
       flow.detectionResult = DetectionResult(
-        widthPx: output.bounds.widthPx,
-        heightPx: output.bounds.heightPx,
+        widthPx: detailed.bounds.widthPx,
+        heightPx: detailed.bounds.heightPx,
         widthMm: widthMm,
         heightMm: heightMm,
-        centerX: output.bounds.center.dx,
-        centerY: output.bounds.center.dy,
-        angle: output.bounds.angle,
-        confidence: output.confidence,
-        detectionMethod: DetectionMethod.auto,
+        centerX: detailed.bounds.center.dx,
+        centerY: detailed.bounds.center.dy,
+        angle: detailed.bounds.angle,
+        confidence: detailed.confidence,
+        detectionMethod: detailed.method,
         hasCalibration: hasCalibration,
         warningMessage: hasCalibration ? null : DetectionResult.noCalibrationWarning,
       );
@@ -79,7 +79,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
         centerX: w / 2.0,
         centerY: h / 2.0,
         confidence: 0,
-        detectionMethod: DetectionMethod.auto,
+        detectionMethod: DetectionMethod.manual,
         hasCalibration: flow.calibrationService.current?.pixelsPerMm != null,
         warningMessage: DetectionResult.noCalibrationWarning,
       );

@@ -1,45 +1,141 @@
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
 import '../models/models.dart';
 import 'calibration_service.dart';
+import 'ml_object_detector.dart';
 
-/// Detects round/elliptical object in image and measures pixel dimensions.
-/// Uses simple threshold + center-of-mass heuristics; fallback to manual bounds.
-/// Note: For stronger contour/ellipse detection, consider adding image_processing_contouring.
+/// Detects rectangular object in image (phone, box, etc.).
+/// On Android uses native Kotlin detector for better performance; elsewhere uses Dart isolate.
+/// Fallback to manual bounds when detection is unreliable.
 class MeasurementService {
   MeasurementService(this._calibration);
 
+  static const MethodChannel _nativeDetectChannel =
+      MethodChannel('com.example.test_project_glue_u/object_detection');
+
   final CalibrationService _calibration;
 
-  /// Attempt automatic detection of the largest rectangular object in the image.
-  ///
-  /// Pipeline (OpenCV‑style, implemented with `image`):
-  /// 1) Convert to grayscale
-  /// 2) Gaussian blur (approx. 5x5)
-  /// 3) Edge detection (Sobel magnitude as Canny‑like edges)
-  /// 4) Threshold to binary edge map
-  /// 5) Dilate edges to connect gaps
-  /// 6) Connected‑component labelling as contour groups
-  /// 7) Filter components by area and rectangularity
-  /// 8) Choose the largest valid rectangle and map back to full resolution.
-  ///
-  /// Returns null if detection is unreliable (caller should fall back to manual).
-  Future<ObjectBounds?> detectObject(Uint8List imageBytes) async {
-    return compute(_detectObjectIsolate, imageBytes);
+  /// Internal: bounds plus a label showing which detector produced it.
+  static ({ObjectBounds bounds, DetectionMethod method, double confidence})
+      _pack(ObjectBounds bounds, DetectionMethod method, double confidence) {
+    return (bounds: bounds, method: method, confidence: confidence);
   }
 
-  static Future<ObjectBounds?> _detectObjectIsolate(Uint8List bytes) async {
+  /// Detect object and return bounds + method + confidence.
+  Future<({ObjectBounds bounds, DetectionMethod method, double confidence})?>
+      detectObjectDetailed(Uint8List imageBytes) async {
+    int? ow;
+    int? oh;
+    ObjectBounds? nativeBounds;
+
+    // Try Android native first.
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        final result =
+            await _nativeDetectChannel.invokeMethod<Map<Object?, Object?>>(
+          'detectObject',
+          imageBytes,
+        );
+        if (result != null) {
+          final cx = (result['centerX'] as num).toDouble();
+          final cy = (result['centerY'] as num).toDouble();
+          final hw = (result['halfWidth'] as num).toDouble();
+          final hh = (result['halfHeight'] as num).toDouble();
+          nativeBounds = ObjectBounds(
+            center: Offset(cx, cy),
+            halfWidth: hw,
+            halfHeight: hh,
+          );
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    // Decode once for heuristics + ML scaling.
+    final decoded = img.decodeImage(imageBytes);
+    if (decoded != null) {
+      ow = decoded.width;
+      oh = decoded.height;
+    }
+
+    bool looksReasonable(ObjectBounds b) {
+      if (ow == null || oh == null) return true;
+      final areaRatio = (b.widthPx * b.heightPx) / (ow * oh);
+      final aspect = b.widthPx / b.heightPx;
+      final okArea = areaRatio >= 0.05 && areaRatio <= 0.85;
+      final okAspect = aspect >= 0.25 && aspect <= 4.0;
+      return okArea && okAspect;
+    }
+
+    // Foreground fallback: good for dark object on light background (e.g. hoof photo).
+    // Compute early so we can prefer it.
+    final fg = await compute(_detectForegroundBoundsIsolate, imageBytes);
+
+    double? areaRatioOf(ObjectBounds? b) {
+      if (b == null || ow == null || oh == null) return null;
+      return (b.widthPx * b.heightPx) / (ow * oh);
+    }
+
+    // Prefer native when it looks reasonable.
+    if (nativeBounds != null && looksReasonable(nativeBounds)) {
+      // If native is tiny but foreground is big, prefer foreground.
+      final nArea = areaRatioOf(nativeBounds);
+      final fArea = areaRatioOf(fg);
+      if (nArea != null &&
+          fArea != null &&
+          nArea < 0.20 &&
+          fArea >= 0.35 &&
+          fArea <= 0.98) {
+        return _pack(fg!, DetectionMethod.autoForeground, 0.68);
+      }
+      return _pack(nativeBounds, DetectionMethod.autoNative, 0.7);
+    }
+
+    // If foreground looks good, prefer it (useful for hoof images).
+    final fArea = areaRatioOf(fg);
+    if (fArea != null && fArea >= 0.35 && fArea <= 0.98) {
+      return _pack(fg!, DetectionMethod.autoForeground, 0.66);
+    }
+
+    // ML fallback last.
+    if (ow != null && oh != null) {
+      final ml = await MlObjectDetector.detect(imageBytes, ow, oh);
+      if (ml != null) {
+        // Reject tiny/invalid ML boxes (common when model doesn't know the object).
+        final areaRatio = (ml.widthPx * ml.heightPx) / (ow * oh);
+        if (areaRatio >= 0.02 && areaRatio <= 0.90) {
+          return _pack(ml, DetectionMethod.autoMl, 0.75);
+        }
+      }
+    }
+
+    // If we haven't returned yet, keep the previous fallback behavior.
+    if (fg != null && ow != null && oh != null) {
+      final areaRatio = (fg.widthPx * fg.heightPx) / (ow * oh);
+      if (areaRatio >= 0.05 && areaRatio <= 0.98) {
+        return _pack(fg, DetectionMethod.autoForeground, 0.65);
+      }
+    }
+
+    if (nativeBounds != null) return _pack(nativeBounds, DetectionMethod.autoNative, 0.4);
+    return null;
+  }
+
+  /// Foreground detector for light background scenes.
+  /// Uses Otsu threshold on grayscale, selects largest dark component, returns its bounding box.
+  static Future<ObjectBounds?> _detectForegroundBoundsIsolate(Uint8List bytes) async {
     final original = img.decodeImage(bytes);
     if (original == null) return null;
     final ow = original.width;
     final oh = original.height;
     if (ow < 20 || oh < 20) return null;
 
-    // Resize to speed up processing while keeping aspect ratio.
-    const maxSize = 400;
+    const maxSize = 450;
     final scale =
         (ow > maxSize || oh > maxSize) ? (maxSize / (ow > oh ? ow : oh)) : 1.0;
     final small = scale < 1
@@ -47,177 +143,183 @@ class MeasurementService {
             original,
             width: (ow * scale).round(),
             height: (oh * scale).round(),
+            interpolation: img.Interpolation.average,
           )
         : original;
-
     final sw = small.width;
     final sh = small.height;
-    if (sw < 20 || sh < 20) return null;
 
-    // Step 1: grayscale (keep a copy for intensity-based mask).
     final gray = img.grayscale(small);
-    final grayForEdges = img.Image.from(gray);
 
-    // Step 2: Gaussian blur (radius 2 ~ 5x5 kernel) on edge image.
-    img.gaussianBlur(grayForEdges, radius: 2);
-
-    // Step 3: Sobel edge detection (Canny‑like) on blurred copy.
-    img.sobel(grayForEdges);
-
-    // Step 4: Threshold to get binary edge map and dark-region mask.
-    // Sobel output is in [0, 255]; values above this are considered strong edges.
-    const edgeThreshold = 40;
-    // Dark object on lighter background (phone on table, etc.).
-    const darkThreshold = 170;
-    final int len = sw * sh;
-    final List<int> mask = List<int>.filled(len, 0);
+    // Otsu threshold
+    final hist = List<int>.filled(256, 0);
     for (int y = 0; y < sh; y++) {
       for (int x = 0; x < sw; x++) {
-        final int idx = y * sw + x;
-        final int edgeVal = grayForEdges.getPixel(x, y).r.toInt();
-        final int lum = gray.getPixel(x, y).r.toInt();
-        final bool isEdge = edgeVal > edgeThreshold;
-        final bool isDark = lum < darkThreshold;
-        if (isEdge || isDark) {
-          mask[idx] = 1;
-        }
+        final v = gray.getPixel(x, y).r.toInt();
+        hist[v]++;
+      }
+    }
+    final total = sw * sh;
+    double sum = 0;
+    for (int i = 0; i < 256; i++) {
+      sum += i * hist[i];
+    }
+    double sumB = 0;
+    int wB = 0;
+    int wF = 0;
+    double varMax = 0;
+    int threshold = 128;
+    for (int t = 0; t < 256; t++) {
+      wB += hist[t];
+      if (wB == 0) continue;
+      wF = total - wB;
+      if (wF == 0) break;
+      sumB += t * hist[t];
+      final mB = sumB / wB;
+      final mF = (sum - sumB) / wF;
+      final varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if (varBetween > varMax) {
+        varMax = varBetween;
+        threshold = t;
       }
     }
 
-    // Step 4.5: Dilate mask once to connect small gaps.
-    List<int> dilated = List<int>.from(mask);
-    for (int y = 1; y < sh - 1; y++) {
-      for (int x = 1; x < sw - 1; x++) {
-        final idx = y * sw + x;
-        if (mask[idx] == 1) continue;
-        bool anyNeighbor = false;
-        for (int dy = -1; dy <= 1 && !anyNeighbor; dy++) {
-          for (int dx = -1; dx <= 1; dx++) {
-            final nIdx = (y + dy) * sw + (x + dx);
-            if (mask[nIdx] == 1) {
-              anyNeighbor = true;
-              break;
-            }
-          }
-        }
-        if (anyNeighbor) {
-          dilated[idx] = 1;
+    ObjectBounds? best;
+    double bestScore = -1;
+
+    ObjectBounds? runMask(bool darkForeground) {
+      final len = sw * sh;
+      final mask = List<int>.filled(len, 0);
+      for (int y = 0; y < sh; y++) {
+        for (int x = 0; x < sw; x++) {
+          final idx = y * sw + x;
+          final v = gray.getPixel(x, y).r.toInt();
+          final isFg = darkForeground ? (v < threshold) : (v > threshold);
+          if (isFg) mask[idx] = 1;
         }
       }
-    }
 
-    // Step 5–7: Connected components as "contours" and rectangle filtering.
-    final List<int> visited = List<int>.filled(len, 0);
-    int bestArea = 0;
-    int bestMinX = 0, bestMinY = 0, bestMaxX = 0, bestMaxY = 0;
-
-    // Scale area threshold from original requirement (> 5000 px in full image).
-    final double areaScale = (ow * oh) / (sw * sh);
-    final int minComponentArea = (5000 / areaScale).round();
-
-    for (int y = 0; y < sh; y++) {
-      for (int x = 0; x < sw; x++) {
-        final startIdx = y * sw + x;
-        if (dilated[startIdx] == 0 || visited[startIdx] == 1) continue;
-
-        // BFS / DFS for this component.
-        final List<int> stack = <int>[startIdx];
-        visited[startIdx] = 1;
-        int minX = x, maxX = x, minY = y, maxY = y;
-        int count = 0;
-
-        while (stack.isNotEmpty) {
-          final idx = stack.removeLast();
-          final cx = idx % sw;
-          final cy = idx ~/ sw;
-          count++;
-          if (cx < minX) minX = cx;
-          if (cx > maxX) maxX = cx;
-          if (cy < minY) minY = cy;
-          if (cy > maxY) maxY = cy;
-
-          for (int dy = -1; dy <= 1; dy++) {
+      // Dilate once to connect holes.
+      final dilated = List<int>.from(mask);
+      for (int y = 1; y < sh - 1; y++) {
+        for (int x = 1; x < sw - 1; x++) {
+          final idx = y * sw + x;
+          if (mask[idx] == 1) continue;
+          bool any = false;
+          for (int dy = -1; dy <= 1 && !any; dy++) {
             for (int dx = -1; dx <= 1; dx++) {
-              if (dx == 0 && dy == 0) continue;
-              final nx = cx + dx;
-              final ny = cy + dy;
-              if (nx < 0 || nx >= sw || ny < 0 || ny >= sh) continue;
-              final nIdx = ny * sw + nx;
-              if (dilated[nIdx] == 1 && visited[nIdx] == 0) {
-                visited[nIdx] = 1;
-                stack.add(nIdx);
+              if (mask[(y + dy) * sw + (x + dx)] == 1) {
+                any = true;
+                break;
               }
             }
           }
+          if (any) dilated[idx] = 1;
         }
+      }
 
-        if (count < minComponentArea) continue;
+      final visited = List<int>.filled(len, 0);
+      int bestCount = 0;
+      int bestMinX = 0, bestMinY = 0, bestMaxX = 0, bestMaxY = 0;
+      final minArea = (0.01 * len).round(); // >= 1% of image
 
-        final int boxW = maxX - minX + 1;
-        final int boxH = maxY - minY + 1;
-        if (boxW < 10 || boxH < 10) continue;
+      for (int y = 0; y < sh; y++) {
+        for (int x = 0; x < sw; x++) {
+          final start = y * sw + x;
+          if (dilated[start] == 0 || visited[start] == 1) continue;
+          final stack = <int>[start];
+          visited[start] = 1;
+          int minX = x, maxX = x, minY = y, maxY = y;
+          int count = 0;
+          while (stack.isNotEmpty) {
+            final idx = stack.removeLast();
+            final cx = idx % sw;
+            final cy = idx ~/ sw;
+            count++;
+            if (cx < minX) minX = cx;
+            if (cx > maxX) maxX = cx;
+            if (cy < minY) minY = cy;
+            if (cy > maxY) maxY = cy;
+            for (int dy = -1; dy <= 1; dy++) {
+              for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                final nx = cx + dx;
+                final ny = cy + dy;
+                if (nx < 0 || nx >= sw || ny < 0 || ny >= sh) continue;
+                final nIdx = ny * sw + nx;
+                if (dilated[nIdx] == 1 && visited[nIdx] == 0) {
+                  visited[nIdx] = 1;
+                  stack.add(nIdx);
+                }
+              }
+            }
+          }
 
-        final double aspect = boxW / boxH;
-        if (aspect < 0.2 || aspect > 5.0) continue;
+          if (count < minArea) continue;
 
-        final double boxArea = (boxW * boxH).toDouble();
-        final double fillRatio = count / boxArea;
-        if (fillRatio < 0.2) continue;
+          // reject components that touch too much border (background)
+          final touchesBorder =
+              minX == 0 || minY == 0 || maxX == sw - 1 || maxY == sh - 1;
+          if (touchesBorder) continue;
 
-        if (count > bestArea) {
-          bestArea = count;
-          bestMinX = minX;
-          bestMinY = minY;
-          bestMaxX = maxX;
-          bestMaxY = maxY;
+          if (count > bestCount) {
+            bestCount = count;
+            bestMinX = minX;
+            bestMinY = minY;
+            bestMaxX = maxX;
+            bestMaxY = maxY;
+          }
         }
+      }
+
+      if (bestCount == 0) return null;
+
+      final invScale = 1 / scale;
+      final minX = bestMinX * invScale;
+      final maxX = bestMaxX * invScale;
+      final minY = bestMinY * invScale;
+      final maxY = bestMaxY * invScale;
+      final w = (maxX - minX + 1).clamp(1.0, ow.toDouble());
+      final h = (maxY - minY + 1).clamp(1.0, oh.toDouble());
+      final cx = minX + w / 2;
+      final cy = minY + h / 2;
+
+      return ObjectBounds(
+        center: Offset(cx, cy),
+        halfWidth: w / 2,
+        halfHeight: h / 2,
+      );
+    }
+
+    double score(ObjectBounds b) {
+      final areaRatio = (b.widthPx * b.heightPx) / (ow * oh);
+      final centerDx = ((b.center.dx / ow) - 0.5).abs();
+      final centerDy = ((b.center.dy / oh) - 0.5).abs();
+      final centerScore = (1 - (centerDx + centerDy)).clamp(0.0, 1.0);
+      // Prefer larger objects, but not whole image.
+      final areaScore = ((areaRatio - 0.05) / 0.75).clamp(0.0, 1.0);
+      return areaScore * 0.7 + centerScore * 0.3;
+    }
+
+    for (final dark in [true, false]) {
+      final b = runMask(dark);
+      if (b == null) continue;
+      final s = score(b);
+      if (s > bestScore) {
+        bestScore = s;
+        best = b;
       }
     }
 
-    if (bestArea <= 0) return null;
+    return best;
+  }
 
-    // Refine inside the best component: tighten to the densest mask region so
-    // we do not include too much background above/below the object.
-    int refMinX = bestMaxX, refMaxX = bestMinX, refMinY = bestMaxY, refMaxY = bestMinY;
-    int refCount = 0;
-    for (int y = bestMinY; y <= bestMaxY; y++) {
-      for (int x = bestMinX; x <= bestMaxX; x++) {
-        final idx = y * sw + x;
-        if (mask[idx] == 1) {
-          refCount++;
-          if (x < refMinX) refMinX = x;
-          if (x > refMaxX) refMaxX = x;
-          if (y < refMinY) refMinY = y;
-          if (y > refMaxY) refMaxY = y;
-        }
-      }
-    }
-    if (refCount < minComponentArea ~/ 2) {
-      refMinX = bestMinX;
-      refMaxX = bestMaxX;
-      refMinY = bestMinY;
-      refMaxY = bestMaxY;
-    }
-
-    // Map refined rectangle back to original resolution.
-    final double invScale = 1 / scale;
-    final double rectMinX = refMinX * invScale;
-    final double rectMaxX = refMaxX * invScale;
-    final double rectMinY = refMinY * invScale;
-    final double rectMaxY = refMaxY * invScale;
-
-    final double width = rectMaxX - rectMinX + 1;
-    final double height = rectMaxY - rectMinY + 1;
-    if (width < 10 || height < 10) return null;
-
-    final double cx = rectMinX + width / 2;
-    final double cy = rectMinY + height / 2;
-
-    return ObjectBounds(
-      center: Offset(cx, cy),
-      halfWidth: width / 2,
-      halfHeight: height / 2,
-    );
+  /// Attempt automatic detection of the largest rectangular object in the image.
+  /// On Android tries native (Kotlin) detector first, then Dart fallback.
+  /// Returns null if detection is unreliable (caller should fall back to manual).
+  Future<ObjectBounds?> detectObject(Uint8List imageBytes) async {
+    final detailed = await detectObjectDetailed(imageBytes);
+    return detailed?.bounds;
   }
 
   /// Convert object bounds + optional reference corners to MeasurementResult (mm).

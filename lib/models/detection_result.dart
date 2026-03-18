@@ -24,7 +24,7 @@ class DetectionResult {
     required this.centerY,
     this.angle = 0,
     this.confidence = 1,
-    this.detectionMethod = DetectionMethod.auto,
+    this.detectionMethod = DetectionMethod.manual,
     this.hasCalibration = false,
     this.warningMessage,
   });

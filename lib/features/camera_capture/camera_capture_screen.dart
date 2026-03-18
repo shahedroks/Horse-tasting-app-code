@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/measurement_flow_provider.dart';
@@ -17,6 +18,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   List<CameraDescription> _cameras = [];
   bool _initialized = false;
   String? _error;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -55,8 +57,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Future<void> _capture() async {
+    if (_busy) return;
     if (_controller == null || !_controller!.value.isInitialized) return;
     try {
+      setState(() => _busy = true);
       final XFile file = await _controller!.takePicture();
       final bytes = await file.readAsBytes();
       if (!mounted) return;
@@ -66,6 +70,34 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       Navigator.of(context).pushReplacementNamed('/processing');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Capture failed: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    if (_busy) return;
+    try {
+      setState(() => _busy = true);
+      final picker = ImagePicker();
+      final XFile? file = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 95,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      final flow = context.read<MeasurementFlowProvider>();
+      flow.capturedImageBytes = bytes;
+      flow.setCapturedImageSize(0, 0);
+      Navigator.of(context).pushReplacementNamed('/processing');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gallery pick failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -99,8 +131,17 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _pickFromGallery,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Gallery'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 ElevatedButton.icon(
-                  onPressed: _capture,
+                  onPressed: _busy ? null : _capture,
                   icon: const Icon(Icons.camera_alt),
                   label: const Text('Capture'),
                   style: ElevatedButton.styleFrom(
