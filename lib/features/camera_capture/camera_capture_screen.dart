@@ -1,6 +1,5 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/measurement_flow_provider.dart';
@@ -75,32 +74,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
     }
   }
 
-  Future<void> _pickFromGallery() async {
-    if (_busy) return;
-    try {
-      setState(() => _busy = true);
-      final picker = ImagePicker();
-      final XFile? file = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 95,
-      );
-      if (file == null) return;
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
-      final flow = context.read<MeasurementFlowProvider>();
-      flow.capturedImageBytes = bytes;
-      flow.setCapturedImageSize(0, 0);
-      Navigator.of(context).pushReplacementNamed('/processing');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Gallery pick failed: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
@@ -131,15 +104,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _pickFromGallery,
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('Gallery'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                  ),
-                ),
-                const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: _busy ? null : _capture,
                   icon: const Icon(Icons.camera_alt),
@@ -157,22 +121,24 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Widget _buildPreview() {
-    if (Theme.of(context).platform == TargetPlatform.iOS) {
-      return ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.center,
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _controller!.value.previewSize!.height,
-              height: _controller!.value.previewSize!.width,
-              child: CameraPreview(_controller!),
-            ),
+    final controller = _controller!;
+    final size = controller.value.previewSize;
+    if (size == null) return CameraPreview(controller);
+
+    // Always preserve aspect ratio to avoid "stretched / long" objects.
+    // Use a cover-fit so the preview fills the screen while keeping geometry correct.
+    return Center(
+      child: ClipRect(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: size.height,
+            height: size.width,
+            child: CameraPreview(controller),
           ),
         ),
-      );
-    }
-    return CameraPreview(_controller!);
+      ),
+    );
   }
 
   Widget _buildGuideOverlay() {
