@@ -1,39 +1,17 @@
-import '../services/ar_pinhole_geometry.dart';
+/// Millimetres per pixel at **96 PPI** (CSS / typical “screen” convention):
+/// `25.4 mm/inch ÷ 96 px/inch`.
+const double kMmPerPixel96Ppi = 25.4 / 96;
 
-/// Order: **calibration** (px/mm) → **AR distance** + pinhole → **1 px = 1 mm** display fallback.
+/// Order: **calibration** (px/mm) → **96 PPI** (`1 px ≈ 0.264583 mm`).
 double displayMmFromPx(
   double px, {
   double? scalePxPerMm,
-  double? arCameraToSubjectMeters,
-  int? imageWidth,
-  double arHorizontalFovDeg = 63,
 }) {
   if (scalePxPerMm != null && scalePxPerMm > 0) {
     return px / scalePxPerMm;
   }
-  if (arCameraToSubjectMeters != null &&
-      arCameraToSubjectMeters > 0 &&
-      imageWidth != null &&
-      imageWidth > 0) {
-    return ArPinholeGeometry.pxToMm(
-      px: px,
-      distanceMeters: arCameraToSubjectMeters,
-      imageWidth: imageWidth,
-      horizontalFovDeg: arHorizontalFovDeg,
-    );
-  }
-  return px;
+  return px * kMmPerPixel96Ppi;
 }
 
 bool hasRealCalibration(double? scalePxPerMm) =>
     scalePxPerMm != null && scalePxPerMm > 0;
-
-bool hasArDistance(double? arCameraToSubjectMeters) =>
-    arCameraToSubjectMeters != null && arCameraToSubjectMeters > 0;
-
-/// True when mm is not the raw 1:1 px fallback.
-bool hasMetricScale(
-  double? scalePxPerMm,
-  double? arCameraToSubjectMeters,
-) =>
-    hasRealCalibration(scalePxPerMm) || hasArDistance(arCameraToSubjectMeters);
