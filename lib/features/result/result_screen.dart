@@ -1,8 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../constants/measurement_display.dart';
 import '../../models/models.dart';
 import '../../providers/measurement_flow_provider.dart';
+
+/// Nearest chart row(s) from stored matches, or computed from mm + category.
+List<MatchedSize> _resolveChartMatches(MeasurementFlowProvider flow) {
+  if (flow.matchedSizes.isNotEmpty) return flow.matchedSizes;
+  final category = flow.selectedCategory;
+  if (category == null || category.isEmpty) return const [];
+  final w = flow.measurementResult?.widthMm ?? flow.detectionResult?.widthMm;
+  final h = flow.measurementResult?.heightMm ?? flow.detectionResult?.heightMm;
+  if (w == null || h == null) return const [];
+  final chart = flow.sizeChartService.chart;
+  if (chart == null) return const [];
+  final entries = chart.entriesFor(category);
+  if (entries == null || entries.isEmpty) return const [];
+  return flow.sizeMatchingService.findNearest(
+    entries: entries,
+    widthMm: w,
+    heelToeMm: h,
+    topN: 3,
+  );
+}
 
 /// Result: measured mm, best size, category, alternatives, quality warning.
 class ResultScreen extends StatelessWidget {
@@ -13,7 +34,7 @@ class ResultScreen extends StatelessWidget {
     final flow = context.watch<MeasurementFlowProvider>();
     final result = flow.measurementResult;
     final detectionResult = flow.detectionResult;
-    final matched = flow.matchedSizes;
+    final matched = _resolveChartMatches(flow);
     final category = flow.selectedCategory ?? '';
 
     if (result == null && detectionResult == null) {
@@ -23,9 +44,10 @@ class ResultScreen extends StatelessWidget {
       );
     }
 
-    final hasCalibration = result != null;
     final best = matched.isNotEmpty ? matched.first : null;
-    final warning = flow.sizeMatchingService.betweenSizesWarning(matched);
+    final warning = matched.isNotEmpty
+        ? flow.sizeMatchingService.betweenSizesWarning(matched)
+        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -46,12 +68,41 @@ class ResultScreen extends StatelessWidget {
                     const Text('Measurement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     if (detectionResult != null) ...[
-                      Text('Width: ${detectionResult.widthPx.toStringAsFixed(0)} px'),
-                      Text('Height: ${detectionResult.heightPx.toStringAsFixed(0)} px'),
-                      if (detectionResult.widthMm != null && detectionResult.heightMm != null) ...[
-                        Text('Width: ${detectionResult.widthMm!.toStringAsFixed(1)} mm'),
-                        Text('Height: ${detectionResult.heightMm!.toStringAsFixed(1)} mm'),
-                      ],
+                      Builder(
+                        builder: (context) {
+                          final scale =
+                              flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
+                          final wMm = displayMmFromPx(
+                            detectionResult.widthPx,
+                            scalePxPerMm: scale,
+                          );
+                          final hMm = displayMmFromPx(
+                            detectionResult.heightPx,
+                            scalePxPerMm: scale,
+                          );
+                          final calibrated = hasRealCalibration(scale);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Width: ${wMm.toStringAsFixed(1)} mm',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                'Height: ${hMm.toStringAsFixed(1)} mm',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              if (calibrated)
+                                Text(
+                                  '(${detectionResult.widthPx.toStringAsFixed(0)} × ${detectionResult.heightPx.toStringAsFixed(0)} px)',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).hintColor,
+                                      ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -94,7 +145,7 @@ class ResultScreen extends StatelessWidget {
                 ),
               ),
             ),
-            if (best != null) ...[
+            if (category.isNotEmpty && best != null) ...[
               const SizedBox(height: 16),
               Card(
                 color: Theme.of(context).colorScheme.primaryContainer,
@@ -103,12 +154,31 @@ class ResultScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Best match', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Size chart suggestion',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
                       const SizedBox(height: 8),
                       Text('Size: ${best.entry.size}', style: Theme.of(context).textTheme.titleLarge),
-                      Text('Chart: W ${best.entry.widthMm.toStringAsFixed(0)} mm, H-T ${best.entry.heelToeMm.toStringAsFixed(0)} mm'),
-                      Text('Difference: W ${best.widthDiffMm.toStringAsFixed(1)} mm, H-T ${best.heelToeDiffMm.toStringAsFixed(1)} mm'),
+                      Text(
+                        'Chart: W ${best.entry.widthMm.toStringAsFixed(0)} mm, H-T ${best.entry.heelToeMm.toStringAsFixed(0)} mm',
+                      ),
+                      Text(
+                        'Difference: W ${best.widthDiffMm.toStringAsFixed(1)} mm, H-T ${best.heelToeDiffMm.toStringAsFixed(1)} mm',
+                      ),
                     ],
+                  ),
+                ),
+              ),
+            ],
+            if (category.isNotEmpty && best == null && (result != null || detectionResult != null)) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No size chart rows for category "$category".',
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
               ),

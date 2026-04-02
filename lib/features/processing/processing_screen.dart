@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
+import '../../constants/measurement_display.dart';
 import '../../models/detection_result.dart';
 import '../../models/detection_method.dart';
 import '../../models/object_bounds.dart';
@@ -43,27 +44,27 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       flow.setCapturedImageSize(decoded.width, decoded.height);
     }
 
-    final output = await flow.borderDetectionService.detect(cropped);
+    final detailed = await flow.measurementService.detectObjectDetailed(cropped);
     if (!mounted) return;
 
-    if (output != null) {
-      flow.objectBounds = output.bounds;
+    if (detailed != null) {
+      flow.objectBounds = detailed.bounds;
       final scalePxPerMm = flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
-      final hasCalibration = scalePxPerMm != null && scalePxPerMm > 0;
-      final widthMm = hasCalibration ? output.bounds.widthPx / scalePxPerMm : null;
-      final heightMm = hasCalibration ? output.bounds.heightPx / scalePxPerMm : null;
+      final hasCalibration = hasRealCalibration(scalePxPerMm);
+      final widthMm = displayMmFromPx(detailed.bounds.widthPx, scalePxPerMm: scalePxPerMm);
+      final heightMm = displayMmFromPx(detailed.bounds.heightPx, scalePxPerMm: scalePxPerMm);
       flow.detectionResult = DetectionResult(
-        widthPx: output.bounds.widthPx,
-        heightPx: output.bounds.heightPx,
+        widthPx: detailed.bounds.widthPx,
+        heightPx: detailed.bounds.heightPx,
         widthMm: widthMm,
         heightMm: heightMm,
-        centerX: output.bounds.center.dx,
-        centerY: output.bounds.center.dy,
-        angle: output.bounds.angle,
-        confidence: output.confidence,
-        detectionMethod: DetectionMethod.auto,
+        centerX: detailed.bounds.center.dx,
+        centerY: detailed.bounds.center.dy,
+        angle: detailed.bounds.angle,
+        confidence: detailed.confidence,
+        detectionMethod: detailed.method,
         hasCalibration: hasCalibration,
-        warningMessage: hasCalibration ? null : DetectionResult.noCalibrationWarning,
+        warningMessage: null,
       );
     } else {
       final w = flow.capturedImageWidth > 0 ? flow.capturedImageWidth : 1;
@@ -73,15 +74,22 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
         halfWidth: w * 0.2,
         halfHeight: h * 0.2,
       );
+      final scalePxPerMmFallback =
+          flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
+      final hasCalibrationFallback = hasRealCalibration(scalePxPerMmFallback);
+      final bw = w * 0.4;
+      final bh = h * 0.4;
       flow.detectionResult = DetectionResult(
-        widthPx: w * 0.4,
-        heightPx: h * 0.4,
+        widthPx: bw,
+        heightPx: bh,
+        widthMm: displayMmFromPx(bw, scalePxPerMm: scalePxPerMmFallback),
+        heightMm: displayMmFromPx(bh, scalePxPerMm: scalePxPerMmFallback),
         centerX: w / 2.0,
         centerY: h / 2.0,
         confidence: 0,
-        detectionMethod: DetectionMethod.auto,
-        hasCalibration: flow.calibrationService.current?.pixelsPerMm != null,
-        warningMessage: DetectionResult.noCalibrationWarning,
+        detectionMethod: DetectionMethod.manual,
+        hasCalibration: hasCalibrationFallback,
+        warningMessage: null,
       );
     }
 

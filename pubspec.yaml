@@ -37,7 +37,14 @@ dependencies:
   provider: ^6.1.2
   path_provider: ^2.1.2
   permission_handler: ^10.4.5
+  tflite_flutter: ^0.12.1
   ar_flutter_plugin:
+
+dependency_overrides:
+  # ar_flutter_plugin requires permission_handler ^10.x, which pulls Android 10.3.x (v1 embedding).
+  permission_handler: ^11.3.1
+  permission_handler_android: ^12.0.12
+  permission_handler_platform_interface: ^4.2.0
 
 dev_dependencies:
   flutter_test:
@@ -58,6 +65,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - assets/models/
+    - assets/models/lite-model_ssd_mobilenet_v1_1_metadata_2.tflite
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

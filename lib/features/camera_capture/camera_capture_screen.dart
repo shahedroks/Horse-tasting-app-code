@@ -17,6 +17,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   List<CameraDescription> _cameras = [];
   bool _initialized = false;
   String? _error;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -55,8 +56,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Future<void> _capture() async {
+    if (_busy) return;
     if (_controller == null || !_controller!.value.isInitialized) return;
     try {
+      setState(() => _busy = true);
       final XFile file = await _controller!.takePicture();
       final bytes = await file.readAsBytes();
       if (!mounted) return;
@@ -66,6 +69,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       Navigator.of(context).pushReplacementNamed('/processing');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Capture failed: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -100,7 +105,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton.icon(
-                  onPressed: _capture,
+                  onPressed: _busy ? null : _capture,
                   icon: const Icon(Icons.camera_alt),
                   label: const Text('Capture'),
                   style: ElevatedButton.styleFrom(
@@ -116,22 +121,24 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Widget _buildPreview() {
-    if (Theme.of(context).platform == TargetPlatform.iOS) {
-      return ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.center,
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _controller!.value.previewSize!.height,
-              height: _controller!.value.previewSize!.width,
-              child: CameraPreview(_controller!),
-            ),
+    final controller = _controller!;
+    final size = controller.value.previewSize;
+    if (size == null) return CameraPreview(controller);
+
+    // Always preserve aspect ratio to avoid "stretched / long" objects.
+    // Use a cover-fit so the preview fills the screen while keeping geometry correct.
+    return Center(
+      child: ClipRect(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: size.height,
+            height: size.width,
+            child: CameraPreview(controller),
           ),
         ),
-      );
-    }
-    return CameraPreview(_controller!);
+      ),
+    );
   }
 
   Widget _buildGuideOverlay() {
