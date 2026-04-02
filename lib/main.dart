@@ -38,9 +38,7 @@ void main() async {
             sizeMatchingService: SizeMatchingService(),
           ),
         ),
-        ChangeNotifierProvider(
-          create: (_) => ArMeasureProvider(),
-        ),
+        ChangeNotifierProvider(create: (_) => ArMeasureProvider()),
       ],
       child: const MyApp(),
     ),

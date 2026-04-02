@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
+import '../../constants/measurement_display.dart';
 import '../../models/models.dart';
 import '../../models/detection_result.dart';
 import '../../models/detection_method.dart';
 import '../../providers/measurement_flow_provider.dart';
-import '../../services/calibration_service.dart';
 
 /// Detection and measurement: overlay on image, manual adjustment, show px and mm.
 class DetectionScreen extends StatefulWidget {
@@ -114,52 +114,58 @@ class _DetectionScreenState extends State<DetectionScreen> {
     flow.scalePxPerMm = _scalePxPerMm;
     flow.referenceCorners = _refCorners;
 
-    if (_scalePxPerMm == null || _scalePxPerMm! <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(CalibrationService.noCalibrationMessage)),
-      );
-      return;
-    }
+    final hasCal = hasRealCalibration(_scalePxPerMm);
+    final widthMm = displayMmFromPx(_bounds!.widthPx, scalePxPerMm: _scalePxPerMm);
+    final heightMm = displayMmFromPx(_bounds!.heightPx, scalePxPerMm: _scalePxPerMm);
 
     final result = flow.measurementService.toMeasurementResult(
-      objectBounds: _bounds!,
-      scalePxPerMm: _scalePxPerMm,
-      quality: flow.measurementService.evaluateQuality(_bounds!, _imageWidth, _imageHeight),
-    );
-    if (result == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(CalibrationService.noCalibrationMessage)),
-      );
-      return;
-    }
+          objectBounds: _bounds!,
+          scalePxPerMm: _scalePxPerMm,
+          quality: flow.measurementService.evaluateQuality(_bounds!, _imageWidth, _imageHeight),
+        ) ??
+        MeasurementResult(
+          widthMm: widthMm,
+          heightMm: heightMm,
+          widthPx: _bounds!.widthPx,
+          heightPx: _bounds!.heightPx,
+          quality: flow.measurementService.evaluateQuality(_bounds!, _imageWidth, _imageHeight),
+        );
     flow.measurementResult = result;
 
     flow.detectionResult = DetectionResult(
       widthPx: _bounds!.widthPx,
       heightPx: _bounds!.heightPx,
-      widthMm: result.widthMm,
-      heightMm: result.heightMm,
+      widthMm: widthMm,
+      heightMm: heightMm,
       centerX: _bounds!.center.dx,
       centerY: _bounds!.center.dy,
       angle: _bounds!.angle,
       confidence: 0.5,
       detectionMethod: DetectionMethod.manual,
-      hasCalibration: true,
+      hasCalibration: hasCal,
+      warningMessage: null,
     );
 
-    final category = flow.selectedCategory;
-    final chart = flow.sizeChartService.chart;
-    if (category != null && chart != null) {
-      final entries = chart.entriesFor(category);
-      if (entries != null && entries.isNotEmpty) {
-        final matched = flow.sizeMatchingService.findNearest(
-          entries: entries,
-          widthMm: result.widthMm,
-          heelToeMm: result.heightMm,
-          topN: 3,
-        );
-        flow.matchedSizes = matched;
+    if (hasCal) {
+      final category = flow.selectedCategory;
+      final chart = flow.sizeChartService.chart;
+      if (category != null && chart != null) {
+        final entries = chart.entriesFor(category);
+        if (entries != null && entries.isNotEmpty) {
+          flow.matchedSizes = flow.sizeMatchingService.findNearest(
+            entries: entries,
+            widthMm: result.widthMm,
+            heelToeMm: result.heightMm,
+            topN: 3,
+          );
+        } else {
+          flow.matchedSizes = [];
+        }
+      } else {
+        flow.matchedSizes = [];
       }
+    } else {
+      flow.matchedSizes = [];
     }
     Navigator.of(context).pushReplacementNamed('/result');
   }
@@ -444,12 +450,9 @@ class _InfoPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final widthMm = scalePxPerMm != null && scalePxPerMm! > 0
-        ? bounds.widthPx / scalePxPerMm!
-        : null;
-    final heightMm = scalePxPerMm != null && scalePxPerMm! > 0
-        ? bounds.heightPx / scalePxPerMm!
-        : null;
+    final widthMm = displayMmFromPx(bounds.widthPx, scalePxPerMm: scalePxPerMm);
+    final heightMm = displayMmFromPx(bounds.heightPx, scalePxPerMm: scalePxPerMm);
+    final calibrated = hasRealCalibration(scalePxPerMm);
     return Container(
       padding: const EdgeInsets.all(16),
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -457,19 +460,22 @@ class _InfoPanel extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Width: ${bounds.widthPx.toStringAsFixed(0)} px${widthMm != null ? ' ≈ ${widthMm.toStringAsFixed(1)} mm' : ''}'),
-          Text('Height: ${bounds.heightPx.toStringAsFixed(0)} px${heightMm != null ? ' ≈ ${heightMm.toStringAsFixed(1)} mm' : ''}'),
-          if (scalePxPerMm == null || scalePxPerMm! <= 0)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Accurate real-world measurement is not possible without a reference or calibration.',
-                style: TextStyle(color: Colors.orange, fontSize: 12),
-              ),
+          Text(
+            'Width: ${widthMm.toStringAsFixed(1)} mm',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            'Height: ${heightMm.toStringAsFixed(1)} mm',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          if (calibrated)
+            Text(
+              '(${bounds.widthPx.toStringAsFixed(0)} × ${bounds.heightPx.toStringAsFixed(0)} px)',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
             ),
           const SizedBox(height: 12),
           ElevatedButton(
-            onPressed: (scalePxPerMm != null && scalePxPerMm! > 0) ? onConfirm : null,
+            onPressed: onConfirm,
             child: const Text('Confirm & Get Size'),
           ),
         ],

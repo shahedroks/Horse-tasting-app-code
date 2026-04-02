@@ -16,11 +16,12 @@ class MeasurementFlowProvider extends ChangeNotifier {
     required MeasurementService measurementService,
     required SizeMatchingService sizeMatchingService,
     BorderDetectionService? borderDetectionService,
-  })  : _sizeChartService = sizeChartService,
-        _calibrationService = calibrationService,
-        _measurementService = measurementService,
-        _sizeMatchingService = sizeMatchingService,
-        _borderDetectionService = borderDetectionService ?? BorderDetectionService();
+  }) : _sizeChartService = sizeChartService,
+       _calibrationService = calibrationService,
+       _measurementService = measurementService,
+       _sizeMatchingService = sizeMatchingService,
+       _borderDetectionService =
+           borderDetectionService ?? BorderDetectionService();
 
   final SizeChartService _sizeChartService;
   final CalibrationService _calibrationService;

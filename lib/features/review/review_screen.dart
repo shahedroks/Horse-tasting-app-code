@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../constants/measurement_display.dart';
 import '../../models/detection_result.dart';
 import '../../models/detection_method.dart';
 import '../../models/object_bounds.dart';
@@ -101,8 +102,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           _ReviewPanel(
             result: result,
             bounds: bounds,
-            imageWidth: w,
-            imageHeight: h,
+            scalePxPerMm: flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm,
             ovalBorder: _ovalBorder,
             onToggleOvalBorder: (v) => setState(() => _ovalBorder = v),
             onManualAdjust: () => Navigator.of(context).pushNamed('/detection').then((_) => setState(() {})),
@@ -117,9 +117,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _confirm(MeasurementFlowProvider flow) {
     final bounds = flow.objectBounds!;
     final scalePxPerMm = flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
-    final hasCalibration = scalePxPerMm != null && scalePxPerMm > 0;
-    final widthMm = hasCalibration ? bounds.widthPx / scalePxPerMm : null;
-    final heightMm = hasCalibration ? bounds.heightPx / scalePxPerMm : null;
+    final hasCalibration = hasRealCalibration(scalePxPerMm);
+    final widthMm = displayMmFromPx(bounds.widthPx, scalePxPerMm: scalePxPerMm);
+    final heightMm = displayMmFromPx(bounds.heightPx, scalePxPerMm: scalePxPerMm);
 
     flow.detectionResult = DetectionResult(
       widthPx: bounds.widthPx,
@@ -132,17 +132,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
       confidence: flow.detectionResult?.confidence ?? 0.5,
       detectionMethod: flow.detectionResult?.detectionMethod ?? DetectionMethod.manual,
       hasCalibration: hasCalibration,
-      warningMessage: hasCalibration ? null : DetectionResult.noCalibrationWarning,
+      warningMessage: null,
     );
 
-    if (hasCalibration && widthMm != null && heightMm != null) {
-      flow.measurementResult = MeasurementResult(
-        widthMm: widthMm,
-        heightMm: heightMm,
-        widthPx: bounds.widthPx,
-        heightPx: bounds.heightPx,
-        quality: _confidenceToQuality(flow.detectionResult?.confidence ?? 0.5),
-      );
+    flow.measurementResult = MeasurementResult(
+      widthMm: widthMm,
+      heightMm: heightMm,
+      widthPx: bounds.widthPx,
+      heightPx: bounds.heightPx,
+      quality: _confidenceToQuality(flow.detectionResult?.confidence ?? 0.5),
+    );
+    if (hasCalibration) {
       final category = flow.selectedCategory;
       final chart = flow.sizeChartService.chart;
       if (category != null && chart != null) {
@@ -154,10 +154,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
             heelToeMm: heightMm,
             topN: 3,
           );
+        } else {
+          flow.matchedSizes = [];
         }
+      } else {
+        flow.matchedSizes = [];
       }
     } else {
-      flow.measurementResult = null;
       flow.matchedSizes = [];
     }
 
@@ -174,8 +177,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
 class _ReviewPanel extends StatelessWidget {
   final DetectionResult? result;
   final ObjectBounds bounds;
-  final int imageWidth;
-  final int imageHeight;
+  /// Live scale from flow + saved calibration so mm updates after manual adjust.
+  final double? scalePxPerMm;
   final bool ovalBorder;
   final ValueChanged<bool> onToggleOvalBorder;
   final VoidCallback onManualAdjust;
@@ -185,8 +188,7 @@ class _ReviewPanel extends StatelessWidget {
   const _ReviewPanel({
     required this.result,
     required this.bounds,
-    required this.imageWidth,
-    required this.imageHeight,
+    required this.scalePxPerMm,
     required this.ovalBorder,
     required this.onToggleOvalBorder,
     required this.onManualAdjust,
@@ -198,11 +200,10 @@ class _ReviewPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final widthPx = bounds.widthPx;
     final heightPx = bounds.heightPx;
-    final widthMm = result?.widthMm;
-    final heightMm = result?.heightMm;
-    final hasCalibration = result?.hasCalibration ?? false;
-    final widthCm = widthMm != null ? widthMm / 10.0 : null;
-    final heightCm = heightMm != null ? heightMm / 10.0 : null;
+    final widthMm = displayMmFromPx(widthPx, scalePxPerMm: scalePxPerMm);
+    final heightMm = displayMmFromPx(heightPx, scalePxPerMm: scalePxPerMm);
+    final calibrated = hasRealCalibration(scalePxPerMm);
+    final captionStyle = Theme.of(context).textTheme.bodySmall;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -225,21 +226,20 @@ class _ReviewPanel extends StatelessWidget {
               ),
             ],
           ),
-          Text('Image Size: ${imageWidth} × ${imageHeight} px'),
-          const SizedBox(height: 4),
-          Text('Object Width: ${widthPx.toStringAsFixed(0)} px'),
-          Text('Object Height: ${heightPx.toStringAsFixed(0)} px'),
-          if (hasCalibration && widthMm != null && heightMm != null) ...[
-            const SizedBox(height: 4),
-            Text('Converted Width: ${widthCm!.toStringAsFixed(2)} cm (${widthMm.toStringAsFixed(1)} mm)'),
-            Text('Converted Height: ${heightCm!.toStringAsFixed(2)} cm (${heightMm.toStringAsFixed(1)} mm)'),
-          ] else ...[
-            const SizedBox(height: 4),
+          const SizedBox(height: 8),
+          Text(
+            'Object width: ${widthMm.toStringAsFixed(1)} mm',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          ),
+          Text(
+            'Object height: ${heightMm.toStringAsFixed(1)} mm',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          ),
+          if (calibrated)
             Text(
-              DetectionResult.noCalibrationWarning,
-              style: TextStyle(color: Colors.orange.shade800, fontSize: 12),
+              '${widthPx.toStringAsFixed(0)} × ${heightPx.toStringAsFixed(0)} px on image',
+              style: captionStyle?.copyWith(color: Theme.of(context).hintColor),
             ),
-          ],
           const SizedBox(height: 12),
           Row(
             children: [

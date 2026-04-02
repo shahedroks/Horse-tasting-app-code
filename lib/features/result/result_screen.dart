@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../constants/measurement_display.dart';
 import '../../models/models.dart';
 import '../../providers/measurement_flow_provider.dart';
 
@@ -23,7 +24,6 @@ class ResultScreen extends StatelessWidget {
       );
     }
 
-    final hasCalibration = result != null;
     final best = matched.isNotEmpty ? matched.first : null;
     final warning = flow.sizeMatchingService.betweenSizesWarning(matched);
 
@@ -46,12 +46,41 @@ class ResultScreen extends StatelessWidget {
                     const Text('Measurement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     if (detectionResult != null) ...[
-                      Text('Width: ${detectionResult.widthPx.toStringAsFixed(0)} px'),
-                      Text('Height: ${detectionResult.heightPx.toStringAsFixed(0)} px'),
-                      if (detectionResult.widthMm != null && detectionResult.heightMm != null) ...[
-                        Text('Width: ${detectionResult.widthMm!.toStringAsFixed(1)} mm'),
-                        Text('Height: ${detectionResult.heightMm!.toStringAsFixed(1)} mm'),
-                      ],
+                      Builder(
+                        builder: (context) {
+                          final scale =
+                              flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
+                          final wMm = displayMmFromPx(
+                            detectionResult.widthPx,
+                            scalePxPerMm: scale,
+                          );
+                          final hMm = displayMmFromPx(
+                            detectionResult.heightPx,
+                            scalePxPerMm: scale,
+                          );
+                          final calibrated = hasRealCalibration(scale);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Width: ${wMm.toStringAsFixed(1)} mm',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                'Height: ${hMm.toStringAsFixed(1)} mm',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              if (calibrated)
+                                Text(
+                                  '(${detectionResult.widthPx.toStringAsFixed(0)} × ${detectionResult.heightPx.toStringAsFixed(0)} px)',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).hintColor,
+                                      ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
