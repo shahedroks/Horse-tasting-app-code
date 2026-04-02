@@ -101,6 +101,23 @@ class MeasurementFlowProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Camera → tapped surface distance (m) from [ArDistanceCaptureScreen]; used with pinhole mm.
+  double? _arCameraToSubjectMeters;
+  double? get arCameraToSubjectMeters => _arCameraToSubjectMeters;
+  set arCameraToSubjectMeters(double? v) {
+    _arCameraToSubjectMeters = v;
+    notifyListeners();
+  }
+
+  /// Horizontal FOV (degrees) of the **still capture**; tweak if mm are systematically off.
+  double _arHorizontalFovDeg = 63;
+  double get arHorizontalFovDeg => _arHorizontalFovDeg;
+  set arHorizontalFovDeg(double v) {
+    if (v <= 10 || v >= 170) return;
+    _arHorizontalFovDeg = v;
+    notifyListeners();
+  }
+
   MeasurementResult? _measurementResult;
   MeasurementResult? get measurementResult => _measurementResult;
   set measurementResult(MeasurementResult? v) {
@@ -130,6 +147,7 @@ class MeasurementFlowProvider extends ChangeNotifier {
     _objectBounds = null;
     _referenceCorners = null;
     _scalePxPerMm = null;
+    _arCameraToSubjectMeters = null;
     _measurementResult = null;
     _matchedSizes = [];
     _detectionResult = null;
@@ -146,6 +164,7 @@ class MeasurementFlowProvider extends ChangeNotifier {
     _objectBounds = null;
     _referenceCorners = null;
     _scalePxPerMm = null;
+    _arCameraToSubjectMeters = null;
     _measurementResult = null;
     _matchedSizes = [];
     _detectionResult = null;

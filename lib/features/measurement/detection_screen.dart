@@ -114,9 +114,22 @@ class _DetectionScreenState extends State<DetectionScreen> {
     flow.scalePxPerMm = _scalePxPerMm;
     flow.referenceCorners = _refCorners;
 
-    final hasCal = hasRealCalibration(_scalePxPerMm);
-    final widthMm = displayMmFromPx(_bounds!.widthPx, scalePxPerMm: _scalePxPerMm);
-    final heightMm = displayMmFromPx(_bounds!.heightPx, scalePxPerMm: _scalePxPerMm);
+    final ar = flow.arCameraToSubjectMeters;
+    final hasCal = hasMetricScale(_scalePxPerMm, ar);
+    final widthMm = displayMmFromPx(
+      _bounds!.widthPx,
+      scalePxPerMm: _scalePxPerMm,
+      arCameraToSubjectMeters: ar,
+      imageWidth: _imageWidth > 0 ? _imageWidth : null,
+      arHorizontalFovDeg: flow.arHorizontalFovDeg,
+    );
+    final heightMm = displayMmFromPx(
+      _bounds!.heightPx,
+      scalePxPerMm: _scalePxPerMm,
+      arCameraToSubjectMeters: ar,
+      imageWidth: _imageWidth > 0 ? _imageWidth : null,
+      arHorizontalFovDeg: flow.arHorizontalFovDeg,
+    );
 
     final result = flow.measurementService.toMeasurementResult(
           objectBounds: _bounds!,
@@ -214,6 +227,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
           _InfoPanel(
             bounds: _bounds!,
             scalePxPerMm: _scalePxPerMm,
+            arCameraToSubjectMeters: flow.arCameraToSubjectMeters,
+            imageWidth: _imageWidth,
+            arHorizontalFovDeg: flow.arHorizontalFovDeg,
             onConfirm: _onConfirm,
           ),
         ],
@@ -440,19 +456,37 @@ class _OverlayPainter extends CustomPainter {
 class _InfoPanel extends StatelessWidget {
   final ObjectBounds bounds;
   final double? scalePxPerMm;
+  final double? arCameraToSubjectMeters;
+  final int imageWidth;
+  final double arHorizontalFovDeg;
   final VoidCallback onConfirm;
 
   const _InfoPanel({
     required this.bounds,
     required this.scalePxPerMm,
+    required this.arCameraToSubjectMeters,
+    required this.imageWidth,
+    required this.arHorizontalFovDeg,
     required this.onConfirm,
   });
 
   @override
   Widget build(BuildContext context) {
-    final widthMm = displayMmFromPx(bounds.widthPx, scalePxPerMm: scalePxPerMm);
-    final heightMm = displayMmFromPx(bounds.heightPx, scalePxPerMm: scalePxPerMm);
-    final calibrated = hasRealCalibration(scalePxPerMm);
+    final widthMm = displayMmFromPx(
+      bounds.widthPx,
+      scalePxPerMm: scalePxPerMm,
+      arCameraToSubjectMeters: arCameraToSubjectMeters,
+      imageWidth: imageWidth > 0 ? imageWidth : null,
+      arHorizontalFovDeg: arHorizontalFovDeg,
+    );
+    final heightMm = displayMmFromPx(
+      bounds.heightPx,
+      scalePxPerMm: scalePxPerMm,
+      arCameraToSubjectMeters: arCameraToSubjectMeters,
+      imageWidth: imageWidth > 0 ? imageWidth : null,
+      arHorizontalFovDeg: arHorizontalFovDeg,
+    );
+    final calibrated = hasMetricScale(scalePxPerMm, arCameraToSubjectMeters);
     return Container(
       padding: const EdgeInsets.all(16),
       color: Theme.of(context).colorScheme.surfaceContainerHighest,

@@ -50,9 +50,23 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     if (detailed != null) {
       flow.objectBounds = detailed.bounds;
       final scalePxPerMm = flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
-      final hasCalibration = hasRealCalibration(scalePxPerMm);
-      final widthMm = displayMmFromPx(detailed.bounds.widthPx, scalePxPerMm: scalePxPerMm);
-      final heightMm = displayMmFromPx(detailed.bounds.heightPx, scalePxPerMm: scalePxPerMm);
+      final iw = flow.capturedImageWidth;
+      final ar = flow.arCameraToSubjectMeters;
+      final hasCalibration = hasMetricScale(scalePxPerMm, ar);
+      final widthMm = displayMmFromPx(
+        detailed.bounds.widthPx,
+        scalePxPerMm: scalePxPerMm,
+        arCameraToSubjectMeters: ar,
+        imageWidth: iw > 0 ? iw : null,
+        arHorizontalFovDeg: flow.arHorizontalFovDeg,
+      );
+      final heightMm = displayMmFromPx(
+        detailed.bounds.heightPx,
+        scalePxPerMm: scalePxPerMm,
+        arCameraToSubjectMeters: ar,
+        imageWidth: iw > 0 ? iw : null,
+        arHorizontalFovDeg: flow.arHorizontalFovDeg,
+      );
       flow.detectionResult = DetectionResult(
         widthPx: detailed.bounds.widthPx,
         heightPx: detailed.bounds.heightPx,
@@ -76,14 +90,27 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       );
       final scalePxPerMmFallback =
           flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
-      final hasCalibrationFallback = hasRealCalibration(scalePxPerMmFallback);
+      final arFb = flow.arCameraToSubjectMeters;
+      final hasCalibrationFallback = hasMetricScale(scalePxPerMmFallback, arFb);
       final bw = w * 0.4;
       final bh = h * 0.4;
       flow.detectionResult = DetectionResult(
         widthPx: bw,
         heightPx: bh,
-        widthMm: displayMmFromPx(bw, scalePxPerMm: scalePxPerMmFallback),
-        heightMm: displayMmFromPx(bh, scalePxPerMm: scalePxPerMmFallback),
+        widthMm: displayMmFromPx(
+          bw,
+          scalePxPerMm: scalePxPerMmFallback,
+          arCameraToSubjectMeters: arFb,
+          imageWidth: w > 0 ? w : null,
+          arHorizontalFovDeg: flow.arHorizontalFovDeg,
+        ),
+        heightMm: displayMmFromPx(
+          bh,
+          scalePxPerMm: scalePxPerMmFallback,
+          arCameraToSubjectMeters: arFb,
+          imageWidth: w > 0 ? w : null,
+          arHorizontalFovDeg: flow.arHorizontalFovDeg,
+        ),
         centerX: w / 2.0,
         centerY: h / 2.0,
         confidence: 0,

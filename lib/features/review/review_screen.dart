@@ -102,11 +102,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
           _ReviewPanel(
             result: result,
             bounds: bounds,
+            imageWidth: w,
             scalePxPerMm: flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm,
+            arCameraToSubjectMeters: flow.arCameraToSubjectMeters,
+            arHorizontalFovDeg: flow.arHorizontalFovDeg,
             ovalBorder: _ovalBorder,
             onToggleOvalBorder: (v) => setState(() => _ovalBorder = v),
             onManualAdjust: () => Navigator.of(context).pushNamed('/detection').then((_) => setState(() {})),
             onRecalculate: () => Navigator.of(context).pushReplacementNamed('/processing'),
+            onArDistance: w > 0
+                ? () async {
+                    await Navigator.of(context).pushNamed('/ar_distance');
+                    if (context.mounted) setState(() {});
+                  }
+                : null,
             onConfirm: () => _confirm(flow),
           ),
         ],
@@ -117,9 +126,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _confirm(MeasurementFlowProvider flow) {
     final bounds = flow.objectBounds!;
     final scalePxPerMm = flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
-    final hasCalibration = hasRealCalibration(scalePxPerMm);
-    final widthMm = displayMmFromPx(bounds.widthPx, scalePxPerMm: scalePxPerMm);
-    final heightMm = displayMmFromPx(bounds.heightPx, scalePxPerMm: scalePxPerMm);
+    final iw = flow.capturedImageWidth;
+    final ar = flow.arCameraToSubjectMeters;
+    final fov = flow.arHorizontalFovDeg;
+    final hasPhysical = hasMetricScale(scalePxPerMm, ar);
+    final widthMm = displayMmFromPx(
+      bounds.widthPx,
+      scalePxPerMm: scalePxPerMm,
+      arCameraToSubjectMeters: ar,
+      imageWidth: iw > 0 ? iw : null,
+      arHorizontalFovDeg: fov,
+    );
+    final heightMm = displayMmFromPx(
+      bounds.heightPx,
+      scalePxPerMm: scalePxPerMm,
+      arCameraToSubjectMeters: ar,
+      imageWidth: iw > 0 ? iw : null,
+      arHorizontalFovDeg: fov,
+    );
 
     flow.detectionResult = DetectionResult(
       widthPx: bounds.widthPx,
@@ -131,7 +155,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       angle: bounds.angle,
       confidence: flow.detectionResult?.confidence ?? 0.5,
       detectionMethod: flow.detectionResult?.detectionMethod ?? DetectionMethod.manual,
-      hasCalibration: hasCalibration,
+      hasCalibration: hasPhysical,
       warningMessage: null,
     );
 
@@ -142,7 +166,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       heightPx: bounds.heightPx,
       quality: _confidenceToQuality(flow.detectionResult?.confidence ?? 0.5),
     );
-    if (hasCalibration) {
+    if (hasPhysical) {
       final category = flow.selectedCategory;
       final chart = flow.sizeChartService.chart;
       if (category != null && chart != null) {
@@ -177,22 +201,30 @@ class _ReviewScreenState extends State<ReviewScreen> {
 class _ReviewPanel extends StatelessWidget {
   final DetectionResult? result;
   final ObjectBounds bounds;
+  final int imageWidth;
   /// Live scale from flow + saved calibration so mm updates after manual adjust.
   final double? scalePxPerMm;
+  final double? arCameraToSubjectMeters;
+  final double arHorizontalFovDeg;
   final bool ovalBorder;
   final ValueChanged<bool> onToggleOvalBorder;
   final VoidCallback onManualAdjust;
   final VoidCallback onRecalculate;
+  final VoidCallback? onArDistance;
   final VoidCallback onConfirm;
 
   const _ReviewPanel({
     required this.result,
     required this.bounds,
+    required this.imageWidth,
     required this.scalePxPerMm,
+    required this.arCameraToSubjectMeters,
+    required this.arHorizontalFovDeg,
     required this.ovalBorder,
     required this.onToggleOvalBorder,
     required this.onManualAdjust,
     required this.onRecalculate,
+    required this.onArDistance,
     required this.onConfirm,
   });
 
@@ -200,9 +232,22 @@ class _ReviewPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final widthPx = bounds.widthPx;
     final heightPx = bounds.heightPx;
-    final widthMm = displayMmFromPx(widthPx, scalePxPerMm: scalePxPerMm);
-    final heightMm = displayMmFromPx(heightPx, scalePxPerMm: scalePxPerMm);
-    final calibrated = hasRealCalibration(scalePxPerMm);
+    final widthMm = displayMmFromPx(
+      widthPx,
+      scalePxPerMm: scalePxPerMm,
+      arCameraToSubjectMeters: arCameraToSubjectMeters,
+      imageWidth: imageWidth > 0 ? imageWidth : null,
+      arHorizontalFovDeg: arHorizontalFovDeg,
+    );
+    final heightMm = displayMmFromPx(
+      heightPx,
+      scalePxPerMm: scalePxPerMm,
+      arCameraToSubjectMeters: arCameraToSubjectMeters,
+      imageWidth: imageWidth > 0 ? imageWidth : null,
+      arHorizontalFovDeg: arHorizontalFovDeg,
+    );
+    final showMetricCaption =
+        hasMetricScale(scalePxPerMm, arCameraToSubjectMeters);
     final captionStyle = Theme.of(context).textTheme.bodySmall;
 
     return Container(
@@ -235,12 +280,24 @@ class _ReviewPanel extends StatelessWidget {
             'Object height: ${heightMm.toStringAsFixed(1)} mm',
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
           ),
-          if (calibrated)
+          if (arCameraToSubjectMeters != null && arCameraToSubjectMeters! > 0)
+            Text(
+              'AR distance ≈ ${(arCameraToSubjectMeters! * 100).toStringAsFixed(0)} cm',
+              style: captionStyle?.copyWith(color: Theme.of(context).hintColor),
+            ),
+          if (showMetricCaption)
             Text(
               '${widthPx.toStringAsFixed(0)} × ${heightPx.toStringAsFixed(0)} px on image',
               style: captionStyle?.copyWith(color: Theme.of(context).hintColor),
             ),
           const SizedBox(height: 12),
+          if (onArDistance != null)
+            OutlinedButton.icon(
+              onPressed: onArDistance,
+              icon: const Icon(Icons.view_in_ar),
+              label: const Text('AR distance (for mm)'),
+            ),
+          if (onArDistance != null) const SizedBox(height: 8),
           Row(
             children: [
               OutlinedButton(

@@ -50,15 +50,23 @@ class ResultScreen extends StatelessWidget {
                         builder: (context) {
                           final scale =
                               flow.scalePxPerMm ?? flow.calibrationService.current?.pixelsPerMm;
+                          final iw = flow.capturedImageWidth;
+                          final ar = flow.arCameraToSubjectMeters;
                           final wMm = displayMmFromPx(
                             detectionResult.widthPx,
                             scalePxPerMm: scale,
+                            arCameraToSubjectMeters: ar,
+                            imageWidth: iw > 0 ? iw : null,
+                            arHorizontalFovDeg: flow.arHorizontalFovDeg,
                           );
                           final hMm = displayMmFromPx(
                             detectionResult.heightPx,
                             scalePxPerMm: scale,
+                            arCameraToSubjectMeters: ar,
+                            imageWidth: iw > 0 ? iw : null,
+                            arHorizontalFovDeg: flow.arHorizontalFovDeg,
                           );
-                          final calibrated = hasRealCalibration(scale);
+                          final calibrated = hasMetricScale(scale, ar);
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [

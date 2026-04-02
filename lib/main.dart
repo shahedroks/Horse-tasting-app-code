@@ -18,6 +18,7 @@ import 'features/calibration/calibration_screen.dart';
 import 'features/processing/processing_screen.dart';
 import 'features/review/review_screen.dart';
 import 'features/ar_measurement/ar_measure_screen.dart';
+import 'features/ar_measurement/ar_distance_capture_screen.dart';
 import 'features/ar_measurement/ar_measure_provider.dart';
 
 void main() async {
@@ -69,6 +70,7 @@ class MyApp extends StatelessWidget {
         '/size_chart': (context) => const SizeChartScreen(),
         '/calibration': (context) => const CalibrationScreen(),
         '/ar_measure': (context) => const ArMeasureScreen(),
+        '/ar_distance': (context) => const ArDistanceCaptureScreen(),
       },
     );
   }
