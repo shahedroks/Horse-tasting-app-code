@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/measurement_display.dart';
 import '../../models/models.dart';
 import '../../providers/measurement_flow_provider.dart';
+import '../../services/size_matching_service.dart';
 
 /// Nearest chart row(s) from stored matches, or computed from mm + category.
 List<MatchedSize> _resolveChartMatches(MeasurementFlowProvider flow) {
@@ -158,6 +161,13 @@ class ResultScreen extends StatelessWidget {
                         'Size chart suggestion',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Smallest size whose chart width and heel–toe cover your measurement (±${SizeMatchingService.fitToleranceMm.toStringAsFixed(0)} mm).',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).hintColor,
+                            ),
+                      ),
                       const SizedBox(height: 8),
                       Text('Size: ${best.entry.size}', style: Theme.of(context).textTheme.titleLarge),
                       Text(
@@ -189,7 +199,9 @@ class ResultScreen extends StatelessWidget {
               const SizedBox(height: 8),
               ...matched.skip(1).take(2).map((m) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text('Size ${m.entry.size}: W ${m.entry.widthMm.toStringAsFixed(0)} mm, H-T ${m.entry.heelToeMm.toStringAsFixed(0)} mm (Δ ${m.score.toStringAsFixed(1)})'),
+                child: Text(
+                  'Size ${m.entry.size}: W ${m.entry.widthMm.toStringAsFixed(0)} mm, H-T ${m.entry.heelToeMm.toStringAsFixed(0)} mm (${_matchScoreLabel(m)})',
+                ),
               )),
             ],
             if (warning != null) ...[
@@ -235,6 +247,17 @@ class ResultScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [MatchedSize.score] is total overshoot (mm) when the chart row covers the foot; otherwise a rank key.
+String _matchScoreLabel(MatchedSize m) {
+  if (m.score < SizeMatchingService.nonFitScoreBase) {
+    return '+${m.score.toStringAsFixed(1)} mm oversize';
+  }
+  final d = math.sqrt(
+    m.widthDiffMm * m.widthDiffMm + m.heelToeDiffMm * m.heelToeDiffMm,
+  );
+  return 'chart distance ${d.toStringAsFixed(1)} mm';
 }
 
 class _ConfidenceChip extends StatelessWidget {

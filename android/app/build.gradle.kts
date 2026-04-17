@@ -7,7 +7,8 @@ plugins {
 
 android {
     namespace = "com.example.test_project_glue_u"
-    compileSdk = flutter.compileSdkVersion
+    // At least 31 for android:attr/lStar (merged from dependencies); ar_flutter_plugin release AAPT needs this.
+    compileSdk = maxOf(flutter.compileSdkVersion, 35)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -35,6 +36,9 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // R8 strips legacy Sceneform classes used by ar_flutter_plugin; disable minify for release APK.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

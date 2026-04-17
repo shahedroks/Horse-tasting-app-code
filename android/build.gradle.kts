@@ -50,6 +50,31 @@ subprojects {
 }
 
 // Legacy plugins default Java 8 while Kotlin targets the host JDK; align with the app (Java 17).
+// Raise compileSdk for all Android library modules (fixes lStar / AAPT on old plugins).
+subprojects {
+    afterEvaluate {
+        val androidExt = extensions.findByName("android") ?: return@afterEvaluate
+        try {
+            val getSdk =
+                androidExt.javaClass.methods.find {
+                    it.name == "getCompileSdk" || it.name == "getCompileSdkVersion"
+                }
+            val cur = getSdk?.invoke(androidExt) as? Int
+            if (cur != null && cur < 35) {
+                try {
+                    androidExt.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
+                        .invoke(androidExt, 35)
+                } catch (_: Exception) {
+                    androidExt.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
+                        .invoke(androidExt, 35)
+                }
+            }
+        } catch (_: Exception) {
+            // Ignore if API differs
+        }
+    }
+}
+
 subprojects {
     afterEvaluate {
         extensions.findByName("android")?.let { androidExt ->

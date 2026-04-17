@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/measurement_flow_provider.dart';
 import '../../services/size_chart_service.dart';
 
-/// Category selection: MINI, FRONTS, DRAFT, SPORTSHU, HINDS.
+/// Category selection: MINI, FRONTS (front hoof), SPORTSHU (thoroughbred), HINDS.
 class CategoryScreen extends StatelessWidget {
   const CategoryScreen({super.key});
 

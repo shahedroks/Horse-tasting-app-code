@@ -34,7 +34,6 @@ class SizeChartService {
   static const List<String> categoryOrder = [
     'MINI',
     'FRONTS',
-    'DRAFT',
     'SPORTSHU',
     'HINDS',
   ];
